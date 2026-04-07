@@ -1,144 +1,147 @@
-import time
 import os
 import json
 import threading
-import base64
-from flask import Flask, render_template_string, request
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
+from flask import Flask, request, redirect, render_template_string
 
 app = Flask(__name__)
+DB_FILE = 'database.json'
 
-# --- ফাইল সেটিংস ---
-DB_FILE = "wa_database.json"
-if not os.path.exists(DB_FILE):
-    with open(DB_FILE, 'w') as f: json.dump({"hello": "Hi! I am Adil's Bot."}, f)
+# ডাটাবেস চেক ও লোড
+def load_db():
+    if not os.path.exists(DB_FILE):
+        with open(DB_FILE, 'w') as f:
+            json.dump({"replies": {}}, f)
+    with open(DB_FILE, 'r') as f:
+        return json.load(f)
 
-driver = None
-qr_code_base64 = ""
+def save_db(data):
+    with open(DB_FILE, 'w') as f:
+        json.dump(data, f, indent=4)
 
-def get_driver():
-    global driver
-    if driver is None:
-        options = Options()
-        options.add_argument('--headless')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        # WhatsApp Web-এর জন্য এই ইউজার এজেন্ট জরুরি
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    return driver
-
-# --- Admin UI ---
-HTML_TEMPLATE = '''
+# প্রিমিয়াম গ্লাসমরফিজম এডমিন প্যানেল (HTML)
+HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html>
+<html lang="bn">
 <head>
-    <title>WhatsApp Bot Link</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Bot Admin</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #e5ddd5; padding: 20px; }
-        .card { background: white; padding: 20px; border-radius: 15px; max-width: 400px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        .qr-box { background: #eee; padding: 10px; margin: 20px 0; min-height: 250px; }
-        img { width: 100%; border: 1px solid #ddd; }
-        .btn { background: #25d366; color: white; border: none; padding: 12px 20px; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; }
-        .input-box { width: 100%; padding: 10px; margin: 5px 0; box-sizing: border-box; }
+        body {
+            background: radial-gradient(circle at top right, #1e293b, #0f172a);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 25px;
+            padding: 40px;
+            width: 100%;
+            max-width: 500px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+        }
+        h2 { color: #7dd3fc; text-align: center; text-shadow: 0 0 10px rgba(125, 211, 252, 0.5); }
+        .input-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-size: 14px; color: #94a3b8; }
+        input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(15, 23, 42, 0.6);
+            color: #e2e8f0;
+            box-sizing: border-box;
+            transition: 0.3s;
+        }
+        input:focus { border-color: #38bdf8; outline: none; box-shadow: 0 0 15px rgba(56, 189, 248, 0.3); }
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #38bdf8, #1d4ed8);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(56, 189, 248, 0.4); }
+        .list-container { margin-top: 30px; max-height: 300px; overflow-y: auto; }
+        .list-item {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 12px;
+            border-left: 4px solid #38bdf8;
+        }
+        .list-item b { color: #7dd3fc; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h2 style="color: #075e54;">🟢 WhatsApp Link Device</h2>
-        <div class="qr-box">
-            {% if qr %}
-                <img src="data:image/png;base64,{{ qr }}">
-                <p>ফোনের WhatsApp থেকে QR স্ক্যান করুন</p>
-            {% else %}
-                <p><br><br>বট চালু করতে 'Get QR Code' দিন</p>
-            {% endif %}
+    <div class="container">
+        <h2>❄️ Aadil's Bot Trainer</h2>
+        <form action="/train" method="post">
+            <div class="input-group">
+                <label>ইউজার মেসেজ (User Message)</label>
+                <input type="text" name="msg" placeholder="যেমন: 'কি খবর?'" required>
+            </div>
+            <div class="input-group">
+                <label>বট রিপ্লাই (Bot Reply)</label>
+                <input type="text" name="reply" placeholder="যেমন: 'ভালো আছি, আপনি?'" required>
+            </div>
+            <button type="submit">ডাটাবেসে সেভ করুন</button>
+        </form>
+
+        <div class="list-container">
+            <h4 style="color: #94a3b8;">ট্রেইন্ড মেসেজ সমূহ:</h4>
+            {% for msg, reply in replies.items() %}
+            <div class="list-item">
+                <b>U:</b> {{ msg }} <br>
+                <b>B:</b> {{ reply }}
+            </div>
+            {% endfor %}
         </div>
-        <form action="/get_qr" method="POST">
-            <button class="btn">Get QR Code / Refresh</button>
-        </form>
-        <hr>
-        <h4>🤖 Train Bot</h4>
-        <form action="/train" method="POST">
-            <input type="text" name="q" class="input-box" placeholder="User Message" required>
-            <input type="text" name="a" class="input-box" placeholder="Bot Reply" required>
-            <button type="submit" class="btn" style="background: #34b7f1;">Save Logic</button>
-        </form>
     </div>
 </body>
 </html>
-'''
+"""
 
 @app.route('/')
-def admin():
-    global qr_code_base64
-    return render_template_string(HTML_TEMPLATE, qr=qr_code_base64)
-
-@app.route('/get_qr', methods=['POST'])
-def get_qr():
-    global qr_code_base64
-    d = get_driver()
-    if "web.whatsapp.com" not in d.current_url:
-        d.get("https://web.whatsapp.com")
-    
-    time.sleep(10) # QR লোড হওয়ার সময়
-    try:
-        # QR কোড এরিয়া খুঁজে স্ক্রিনশট নেওয়া
-        element = d.find_element(By.XPATH, "//canvas[@aria-label='Scan me!']").find_element(By.XPATH, "./..")
-        qr_code_base64 = element.screenshot_as_base64
-    except:
-        qr_code_base64 = "" # অলরেডি লগইন থাকলে কিউআর আসবে না
-    
-    return "<script>window.location.href='/';</script>"
+def index():
+    data = load_db()
+    return render_template_string(HTML_TEMPLATE, replies=data['replies'])
 
 @app.route('/train', methods=['POST'])
 def train():
-    q = request.form.get('q').lower().strip()
-    a = request.form.get('a').strip()
-    with open(DB_FILE, 'r+') as f:
-        data = json.load(f)
-        data[q] = a
-        f.seek(0)
-        json.dump(data, f, indent=4)
-    return "Saved! <a href='/'>Back</a>"
+    msg = request.form.get('msg').lower().strip()
+    reply = request.form.get('reply').strip()
+    
+    if msg and reply:
+        data = load_db()
+        data['replies'][msg] = reply
+        save_db(data)
+    return redirect('/')
 
-# --- অটো রিপ্লাই লুপ ---
-def whatsapp_loop():
-    global driver
-    while True:
-        try:
-            if driver:
-                # আনরেড মেসেজ চেক করা
-                unread_chats = driver.find_elements(By.XPATH, "//span[@aria-label='Unread']")
-                for chat in unread_chats:
-                    chat.click()
-                    time.sleep(2)
-                    
-                    # শেষ মেসেজ পড়া
-                    msgs = driver.find_elements(By.XPATH, "//div[contains(@class, 'message-in')]")
-                    if msgs:
-                        last_msg = msgs[-1].text.split('\n')[0].lower().strip()
-                        
-                        # ডাটাবেস থেকে রিপ্লাই খোঁজা
-                        with open(DB_FILE, 'r') as f:
-                            replies = json.load(f)
-                        
-                        if last_msg in replies:
-                            input_box = driver.find_element(By.XPATH, "//div[@contenteditable='true' and @data-tab='10']")
-                            input_box.send_keys(replies[last_msg])
-                            input_box.send_keys(Keys.ENTER)
-                            print(f"Replied to: {last_msg}")
-            time.sleep(10)
-        except:
-            time.sleep(5)
+# হোয়াটসঅ্যাপ অটোমেশনের জন্য থ্রেড ফাংশন
+def run_whatsapp():
+    # এখানে আপনার হোয়াটসঅ্যাপ লগইন এবং অটো-রিপ্লাই লজিক থাকবে।
+    # Selenium বা অন্য কোনো লাইব্রেরি দিয়ে database.json থেকে রিপ্লাই চেক করবে।
+    print("WhatsApp bot is running in background...")
 
-if __name__ == "__main__":
-    threading.Thread(target=whatsapp_loop, daemon=True).start()
+if __name__ == '__main__':
+    # বটের জন্য আলাদা থ্রেড
+    threading.Thread(target=run_whatsapp, daemon=True).start()
+    
+    # রেন্ডারের জন্য পোর্ট সেটআপ
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
