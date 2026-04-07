@@ -27,7 +27,7 @@ def load_db():
 def save_db(data):
     with open(DB_FILE, 'w') as f: json.dump(data, f, indent=4)
 
-# প্রিমিয়াম আইসি ব্লু গ্লাসমরফিজম ডিজাইন
+# প্রিমিয়াম আইসি ব্লু গ্লাসমরফিজম ডিজাইন এবং বড় কিউআর কোড বক্স
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="bn">
@@ -37,10 +37,11 @@ HTML_TEMPLATE = """
     <title>Aadil's WhatsApp Bot Control</title>
     <style>
         body { background: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; padding: 20px; }
-        .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(15px); border-radius: 20px; padding: 30px; width: 100%; max-width: 450px; border: 1px solid rgba(255, 255, 255, 0.1); text-align: center; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5); }
+        .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(15px); border-radius: 20px; padding: 30px; width: 100%; max-width: 500px; border: 1px solid rgba(255, 255, 255, 0.1); text-align: center; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5); }
         .status { padding: 8px 20px; border-radius: 20px; display: inline-block; margin-bottom: 20px; font-weight: bold; font-size: 14px; }
         .Stopped { background: #ef4444; } .Loading { background: #f59e0b; } .Running { background: #10b981; }
-        .qr-box { background: white; padding: 10px; border-radius: 15px; margin: 20px auto; min-height: 200px; display: flex; align-items: center; justify-content: center; color: #000; }
+        .qr-box { background: white; padding: 15px; border-radius: 15px; margin: 20px auto; min-height: 250px; display: flex; align-items: center; justify-content: center; color: #000; overflow: hidden; }
+        .qr-img { max-width: 100%; height: auto; border-radius: 10px; }
         .btn { background: linear-gradient(135deg, #38bdf8, #1d4ed8); color: white; padding: 14px; border: none; border-radius: 12px; font-weight: bold; width: 100%; cursor: pointer; transition: 0.3s; }
         .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(56, 189, 248, 0.4); }
         input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(15, 23, 42, 0.6); color: white; box-sizing: border-box; }
@@ -57,7 +58,7 @@ HTML_TEMPLATE = """
             <form action="/start" method="post"><button class="btn">Start WhatsApp Scanner</button></form>
         {% else %}
             <div class="qr-box">
-                {% if qr_exists %}<img src="/get_qr?t={{ time }}" width="220">{% else %}কিউআর কোড তৈরি হচ্ছে... (লগ চেক করুন){% endif %}
+                {% if qr_exists %}<img src="/get_qr?t={{ time }}" class="qr-img">{% else %}কিউআর কোড তৈরি হচ্ছে... (লগ চেক করুন){% endif %}
             </div>
         {% endif %}
         
@@ -89,6 +90,9 @@ def start_whatsapp_thread():
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
+    # কিউআর কোড পুরোপুরি দেখানোর জন্য উইন্ডো বড় করা
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--force-device-scale-factor=1") # জুম লেভেল ঠিক রাখা
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
     chrome_options.binary_location = "/usr/bin/google-chrome-stable"
     
@@ -98,14 +102,19 @@ def start_whatsapp_thread():
         logger.info(">>> STEP 3: Navigating to WhatsApp Web...")
         driver.get("https://web.whatsapp.com/")
         
+        # পেজ লোড হওয়ার জন্য অন্তত ৩০ সেকেন্ড অপেক্ষা করুন
+        time.sleep(30)
+        
         # কিউআর কোড খোঁজার জন্য ১৫ বার চেষ্টা (প্রতি ১০ সেকেন্ডে)
         for i in range(15):
             logger.info(f">>> STEP 4: Searching for QR Code Canvas... (Attempt {i+1})")
             try:
+                # পুরো ক্যানভাস বা কিউআর এলিমেন্টটি খুঁজে বের করা
                 qr_element = driver.find_element(By.CSS_SELECTOR, "canvas")
                 if qr_element:
+                    # নির্দিষ্ট কিউআর কোডটির স্ক্রিনশট নেওয়া
                     qr_element.screenshot(QR_FILE)
-                    logger.info(">>> STEP 5: QR Code Screenshot Saved Successfully!")
+                    logger.info(">>> STEP 5: Full QR Code Screenshot Saved Successfully!")
                     bot_status = "Running"
                     break
             except:
