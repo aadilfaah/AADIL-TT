@@ -1,21 +1,13 @@
 FROM python:3.9-slim
 
-# Install Chrome and dependencies
+# প্রয়োজনীয় ডিপেন্ডেন্সি এবং গুগল ক্রোম ইনস্টল করা
 RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    unzip \
-    curl \
-    google-chrome-stable \
-    --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set display port to avoid crash
-ENV DISPLAY=:99
+    wget gnupg unzip curl google-chrome-stable \
+    --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY . /app
-RUN pip install -r requirements.txt
+RUN pip install flask gunicorn selenium
 
-# Start the app
-CMD ["gunicorn", "--bind", "0.0.0.0:10000", "main:app"]
+# Gunicorn দিয়ে অ্যাপ চালানো এবং লগ এনাবল করা
+CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "main:app"]
